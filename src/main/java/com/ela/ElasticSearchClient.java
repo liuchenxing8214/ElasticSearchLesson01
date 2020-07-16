@@ -275,7 +275,7 @@ public class ElasticSearchClient {
                 .prepareSearch("hello-index")
                 .setTypes("article")
                 .setFrom(0)
-                .setSize(10)
+                .setSize(50)
                 //.setQuery(QueryBuilders.matchAllQuery());
                 .setQuery(QueryBuilders.rangeQuery("createTime").gte(start)
                         .lte(end))
