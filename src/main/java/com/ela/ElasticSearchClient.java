@@ -3,7 +3,6 @@ package com.ela;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.elasticsearch.action.search.SearchRequestBuilder;
 import org.elasticsearch.action.search.SearchResponse;
-import org.elasticsearch.client.Response;
 import org.elasticsearch.client.transport.TransportClient;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.transport.InetSocketTransportAddress;
@@ -20,8 +19,8 @@ import org.junit.Test;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
-import java.util.Iterator;
-import java.util.Map;
+import java.text.SimpleDateFormat;
+import java.util.*;
 
 public class ElasticSearchClient {
 
@@ -138,6 +137,10 @@ public class ElasticSearchClient {
                 .field("index", "analyzed")
                 .field("analyzer", "ik_max_word")
                 .endObject()
+                .startObject("createTime")
+                .field("type", "date")
+                .field("format", "yyyy-MM-dd HH:mm:ss")
+                .endObject()
                 .endObject()
                 .endObject()
                 .endObject();
@@ -224,7 +227,7 @@ public class ElasticSearchClient {
         while (iterator.hasNext()) {
             SearchHit searchHit = iterator.next();
             //整个文档对象
-           // System.out.println(searchHit.getSourceAsString());
+            // System.out.println(searchHit.getSourceAsString());
             Map<String, Object> map = searchHit.getSourceAsMap();
             System.out.println(map.get("id"));
             System.out.println(map.get("title"));
@@ -235,22 +238,23 @@ public class ElasticSearchClient {
 
     //批量插入100条数据
     @Test
-    public void test9() throws Exception{
+    public void test9() throws Exception {
         ObjectMapper objectMapper = new ObjectMapper();
-
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
         for (int i = 1; i <= 100; i++) {
             // 描述json 数据
             Article article = new Article();
             article.setId(i);
             article.setTitle(i + "搜索工作其实很快乐");
             article.setContent(i
-                    + "我们希望我们的搜索解决方案要快，我们希望有一个零配置和一个完全免费的搜索模式，我们希望能够简单地使用JSON通过HTTP的索引数据，我们希望我们的搜索服务器始终可用，我们希望能够一台开始并扩展到数百，我们要实时搜索，我们要简单的多租户，我们希望建立一个云的解决方案。Elasticsearch旨在解决所有这些问题和更多的问题。");
+                    + "我们希望我们的搜索解决方案要快，我们希望有一个零配置和一个完全免费的搜索模式");
+            article.setCreateTime(addDay(sdf.format(new Date()), i));
 
             // 建立文档
             client.prepareIndex("hello-index", "article", article.getId().toString())
                     //.setSource(objectMapper.writeValueAsString(article)).get();
-                    .setSource(objectMapper.writeValueAsString(article).getBytes(),XContentType.JSON).get();
-            System.out.println("第"+i+"条记录导入=====");
+                    .setSource(objectMapper.writeValueAsString(article).getBytes(), XContentType.JSON).get();
+            System.out.println("第" + i + "条记录导入=====");
         }
 
         //释放资源
@@ -258,20 +262,24 @@ public class ElasticSearchClient {
     }
 
 
-
     //分页查询
     @Test
-    public void test10() throws Exception{
+    public void test10() throws Exception {
         // 搜索数据
-        long startTime=System.currentTimeMillis();
+        long startTime = System.currentTimeMillis();
         System.out.println("执行代码块/方法");
+        String start = "2020-06-01 00:00:00";
+        String end = "2020-07-01 00:00:00";
 
         SearchRequestBuilder searchRequestBuilder = client
                 .prepareSearch("hello-index")
                 .setTypes("article")
                 .setFrom(0)
-                 .setSize(10)
-                .setQuery(QueryBuilders.matchAllQuery());//默认每页10条记录
+                .setSize(10)
+                //.setQuery(QueryBuilders.matchAllQuery());
+                .setQuery(QueryBuilders.rangeQuery("createTime").gte(start)
+                        .lte(end))
+                ;//默认每页10条记录
 
         // 查询第2页数据，每页20条
         //setFrom()：从第几条开始检索，默认是0。
@@ -283,18 +291,143 @@ public class ElasticSearchClient {
         Iterator<SearchHit> iterator = hits.iterator();
         while (iterator.hasNext()) {
             SearchHit searchHit = iterator.next(); // 每个查询对象
-           // System.out.println(searchHit.getSourceAsString()); // 获取字符串格式打印
+            // System.out.println(searchHit.getSourceAsString()); // 获取字符串格式打印
             System.out.println("id:" + searchHit.getSource().get("id"));
             System.out.println("title:" + searchHit.getSource().get("title"));
             System.out.println("content:" + searchHit.getSource().get("content"));
+            System.out.println("createTime:"+searchHit.getSource().get("createTime"));
             System.out.println("-----------------------------------------");
         }
         //释放资源
         client.close();
-        long endTime=System.currentTimeMillis();
-        System.out.println("程序运行时间： "+(endTime - startTime)+"ms");
+        long endTime = System.currentTimeMillis();
+        System.out.println("程序运行时间： " + (endTime - startTime) + "ms");
     }
 
+
+    private static String index = "test_index5";
+    private static String type = "test_type5";
+
+    @Test
+    public void rangeMatch() throws Exception {
+
+/*
+        *//**进行Mapping设置，这一步设置了索引字段的存储格式，极其重要，否则后面的查询会查出0条记录*//*
+        XContentBuilder mapping = XContentFactory.jsonBuilder()
+                .startObject()
+                .startObject("properties")
+                .startObject("PolicyCode")
+                .field("type", "string")
+                .field("index", "not_analyzed")
+                .endObject()
+                .startObject("ServiceId")
+                .field("type", "string")
+                .field("index", "not_analyzed")
+                .endObject()
+                .startObject("CreateTime")
+                .field("type", "date")
+                .field("format", "yyyy-MM-dd HH:mm:ss")
+                .endObject()
+                .endObject()
+                .endObject();
+        client.admin().indices().preparePutMapping(index)
+                .setType(type)
+                .setSource(mapping)
+                .get();
+
+
+        *//**向索引库中插入数据*//*
+        for (int i = 0; i < 10; i++) {
+            HashMap<String, Object> hashMap = new HashMap<String, Object>();
+            if (i % 2 == 0) {
+                hashMap.put("PolicyCode", "5674504720");
+                hashMap.put("ServiceId", "SE2");
+                hashMap.put("CreateTime", "2016-08-21 00:00:01");
+            } else  {
+                hashMap.put("PolicyCode", "666666666");
+                hashMap.put("ServiceId", "SE3");
+                hashMap.put("CreateTime", "2016-10-21 00:00:01");
+            }
+            IndexResponse indexResponse = client.prepareIndex(index,
+                    type).setSource(hashMap).get();
+        }*/
+
+        /**
+         * rangeQuery时间范围查询
+         * 以下三种查询方式的效果一样
+         */
+        //多条件查询
+        String start = "2016-08-20 00:00:00";
+        String end = "2017-07-23 00:00:00";
+        SearchResponse searchResponse = client.prepareSearch(index)
+                .setTypes(type)
+                .setQuery(QueryBuilders.boolQuery()
+                        .must(QueryBuilders.matchPhraseQuery("PolicyCode", "5674504720"))
+                        .must(QueryBuilders.rangeQuery("CreateTime").gte(start)
+                                .lte(end)))
+                .get();
+//
+//		 SearchResponse searchResponse = client.prepareSearch(index)
+//				 .setTypes(type)
+//		         .setQuery(QueryBuilders.rangeQuery("CreateTime").from("2016-07-21 11:00:00").to("2017-07-21 11:00:00"))
+//		         .get();
+//
+//		 SearchResponse searchResponse = client.prepareSearch(index)
+//				 .setTypes(type)
+//		         .setQuery(QueryBuilders.rangeQuery("CreateTime").gt("2016-07-21 11:00:00").lt("2017-07-21 11:00:00"))
+//		         .get();
+
+        /**
+         * rangeFilter时间范围查询
+         * 以下两种查询方式的效果一样
+         */
+//		 SearchResponse searchResponse = client.prepareSearch(index)
+//				 .setTypes(type)
+//		         .setPostFilter(FilterBuilders.rangeFilter("age").gt(2).lt(5)).get();
+//		         .setPostFilter(FilterBuilders.rangeFilter("age").from(2).to(5)).get();
+
+
+        // 获取查询结果
+        SearchHits hits = searchResponse.getHits();
+        long totalHits = hits.getTotalHits();
+        System.out.println("总数目=" + totalHits);
+        SearchHit[] hits2 = hits.getHits();
+        for (SearchHit searchHit : hits2) {
+            System.out.println(searchHit.getSourceAsString());
+        }
+    }
+
+    public long getMills(String dateTime) throws Exception {
+        Calendar calendar = Calendar.getInstance();
+        calendar.setTime(new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").parse(dateTime));
+        System.out.println(dateTime + ":" + calendar.getTimeInMillis());
+        return calendar.getTimeInMillis();
+    }
+
+
+    /**
+     * @title  获取前n天的数据
+     * @description
+     * @author lc
+     * @param: s
+     * @param: n
+     * @updateTime 2020/7/15 16:22
+     * @return: java.util.Date
+     * @throws
+     */
+    public static Date addDay(String s, int n) {
+        try {
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+
+            Calendar cd = Calendar.getInstance();
+            cd.setTime(sdf.parse(s));
+            cd.add(Calendar.DATE, -(n + 1));//增加一天
+            return sdf.parse(sdf.format(cd.getTime()));
+
+        } catch (Exception e) {
+            return null;
+        }
+    }
 
 
 
